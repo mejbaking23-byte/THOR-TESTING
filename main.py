@@ -1,5 +1,5 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import RedirectResponse
 from PIL import Image
 import io
 import requests
@@ -7,9 +7,11 @@ import json
 import torch
 from transformers import CLIPModel, CLIPProcessor
 
-app = FastAPI(title="Global Photo Search & JSON Extractor")
+app = FastAPI(
+    title="Global AI Photo Matcher",
+    description="Upload an image to extract feature vectors and search across the web/social media."
+)
 
-# Inserted API Keys
 SERPAPI_KEY = "bc7fb45412b91e6f20fbf36b3d1426809de11d693248ab1bbd8b993fe5b84cb9"
 IMGBB_API_KEY = "f62b430b8b0142157a28384bb4ed14f2"
 
@@ -61,6 +63,25 @@ def search_web_and_social_media(public_url):
             })
     return results
 
-@app.get("/", response_class=HTMLResponse)
-async def serve_home_page():
-    return """
+@app.get("/", include_in_schema=False)
+async def redirect_to_docs():
+    return RedirectResponse(url="/docs")
+
+@app.post("/analyze-and-search")
+async def analyze_and_search_image(file: UploadFile = File(...)):
+    try:
+        image_bytes = await file.read()
+        image = Image.open(io.BytesIO(image_bytes))
+        image_metadata = generate_image_vector_json(image)
+        public_url = upload_image_to_cloud(image_bytes)
+        matched_locations = search_web_and_social_media(public_url)
+        return {
+            "status": "success",
+            "uploaded_filename": file.filename,
+            "public_hosted_url": public_url,
+            "image_features_json": image_metadata,
+            "total_matches_found": len(matched_locations),
+            "found_locations": matched_locations
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
