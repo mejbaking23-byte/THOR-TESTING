@@ -3,22 +3,14 @@ from fastapi.responses import RedirectResponse
 from PIL import Image
 import io
 import requests
-import json
-import torch
-from transformers import CLIPModel, CLIPProcessor
 
 app = FastAPI(
     title="Global AI Photo Matcher",
-    description="Upload an image to extract feature vectors and search across the web/social media."
+    description="Upload an image to extract metadata and search across the web/social media."
 )
 
 SERPAPI_KEY = "bc7fb45412b91e6f20fbf36b3d1426809de11d693248ab1bbd8b993fe5b84cb9"
 IMGBB_API_KEY = "f62b430b8b0142157a28384bb4ed14f2"
-
-print("Loading AI Model (OpenAI CLIP)... Please wait.")
-model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
-processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
-print("AI Model Loaded Successfully!")
 
 def upload_image_to_cloud(image_bytes):
     url = "https://api.imgbb.com/1/upload"
@@ -31,16 +23,12 @@ def upload_image_to_cloud(image_bytes):
     else:
         raise Exception(f"ImgBB Upload Failed: {res_json.get('error', {}).get('message', 'Unknown Error')}")
 
-def generate_image_vector_json(image):
-    inputs = processor(images=image, return_tensors="pt")
-    outputs = model.get_image_features(**inputs)
-    feature_vector = outputs.detach().numpy().flatten().tolist()
+def extract_image_metadata(image):
     return {
-        "vector_dimensions": len(feature_vector),
-        "vector_sample_first_10": feature_vector[:10],
-        "image_format": image.format,
-        "image_resolution": f"{image.size[0]}x{image.size[1]}",
-        "color_mode": image.mode
+        "format": image.format,
+        "width": image.size[0],
+        "height": image.size[1],
+        "mode": image.mode
     }
 
 def search_web_and_social_media(public_url):
@@ -72,14 +60,14 @@ async def analyze_and_search_image(file: UploadFile = File(...)):
     try:
         image_bytes = await file.read()
         image = Image.open(io.BytesIO(image_bytes))
-        image_metadata = generate_image_vector_json(image)
+        metadata = extract_image_metadata(image)
         public_url = upload_image_to_cloud(image_bytes)
         matched_locations = search_web_and_social_media(public_url)
         return {
             "status": "success",
             "uploaded_filename": file.filename,
             "public_hosted_url": public_url,
-            "image_features_json": image_metadata,
+            "image_metadata_json": metadata,
             "total_matches_found": len(matched_locations),
             "found_locations": matched_locations
         }
